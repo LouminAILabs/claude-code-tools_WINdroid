@@ -1,0 +1,28 @@
+{
+  "hooks": {
+    "Notification": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CC_TOOLS_DIR/cc-hook.sh",
+            "timeout": 5000
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CC_TOOLS_DIR/cc-hook.sh",
+            "timeout": 5000
+          }
+        ]
+      }
+    ]
+  }
+}
