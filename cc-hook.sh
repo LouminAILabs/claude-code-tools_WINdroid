@@ -91,13 +91,62 @@ extract_rate_limit_expire_at() {
     local message_text=$(echo "$last_line" | jq -r '.message.content[0].text // empty')
     log_debug "Last message text from transcript: $message_text"
 
-    if [[ "$message_text" == "Claude AI usage limit reached"* ]]; then
-        log_debug "Rate limit pattern found in message text."
-        echo "$message_text" | cut -d'|' -f2
-    else
-        log_debug "No rate limit pattern found in last message."
-        echo "0"
+    # Check for new format: "5-hour limit reached ∙ resets 6pm"
+    if [[ "$message_text" =~ limit\ reached\ ∙\ resets\ ([0-9]{1,2})(am|pm) ]]; then
+        log_debug "New rate limit pattern found in message text."
+        local reset_hour="${BASH_REMATCH[1]}"
+        local reset_period="${BASH_REMATCH[2]}"
+        
+        log_debug "Parsed reset time: ${reset_hour}${reset_period}"
+        
+        # Convert to 24-hour format
+        local reset_hour_24
+        if [[ "$reset_period" == "am" ]]; then
+            if [[ "$reset_hour" == "12" ]]; then
+                reset_hour_24="0"
+            else
+                reset_hour_24="$reset_hour"
+            fi
+        else # pm
+            if [[ "$reset_hour" == "12" ]]; then
+                reset_hour_24="12"
+            else
+                reset_hour_24=$((reset_hour + 12))
+            fi
+        fi
+        
+        log_debug "Converted to 24-hour format: ${reset_hour_24}:00"
+        
+        # Get current time and target time for today
+        local current_timestamp=$(date +%s)
+        local today_reset_timestamp
+        
+        if command -v gdate >/dev/null 2>&1; then
+            today_reset_timestamp=$(gdate -d "today ${reset_hour_24}:00" +%s)
+        else
+            today_reset_timestamp=$(date -j -f "%Y-%m-%d %H:%M" "$(date +%Y-%m-%d) ${reset_hour_24}:00" +%s 2>/dev/null || echo "0")
+        fi
+        
+        # If today's reset time has passed, use tomorrow's reset time
+        local target_timestamp
+        if [[ "$today_reset_timestamp" -gt "$current_timestamp" ]]; then
+            target_timestamp="$today_reset_timestamp"
+            log_debug "Using today's reset time: $target_timestamp"
+        else
+            if command -v gdate >/dev/null 2>&1; then
+                target_timestamp=$(gdate -d "tomorrow ${reset_hour_24}:00" +%s)
+            else
+                target_timestamp=$(date -j -v+1d -f "%Y-%m-%d %H:%M" "$(date +%Y-%m-%d) ${reset_hour_24}:00" +%s 2>/dev/null || echo "0")
+            fi
+            log_debug "Using tomorrow's reset time: $target_timestamp"
+        fi
+        
+        echo "$target_timestamp"
+        return
     fi
+
+    log_debug "No rate limit pattern found in last message."
+    echo "0"
 }
 
 # Function to save rate limit state
